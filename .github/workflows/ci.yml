@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check . && ruff format --check .
+      - run: pytest -q
+
+  train:
+    # Retrains on the real data and enforces the quality gates.
+    # If AUC, KS or calibration fall below the thresholds, the job fails.
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: python scripts/download_data.py
+      - run: python -m training.train --out artifacts-candidate
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model-candidate
+          path: artifacts-candidate/
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t credit-risk-api:ci .
+      - name: Smoke test the container
+        run: |
+          docker run -d --name api -p 8000:8000 credit-risk-api:ci
+          for i in $(seq 1 30); do curl -fsS localhost:8000/health && break; sleep 1; done
+          curl -fsS -X POST localhost:8000/v1/score -H 'content-type: application/json' \
+            -d '{"application_id":"ci","LIMIT_BAL":50000,"EDUCATION":2,"pay_status":[2,2,0,0,0,0],"bill_amt":[46990,48233,49291,28314,28959,29547],"pay_amt":[0,2000,1500,1000,1000,800]}'
+          docker logs api

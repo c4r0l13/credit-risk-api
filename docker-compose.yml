@@ -1,0 +1,10 @@
+services:
+  api:
+    build: .
+    image: credit-risk-api:latest
+    ports:
+      - "8000:8000"
+    environment:
+      LOG_LEVEL: INFO
+      DRIFT_WINDOW: "2000"
+    restart: unless-stopped

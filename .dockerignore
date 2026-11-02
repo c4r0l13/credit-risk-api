@@ -1,0 +1,10 @@
+.git
+.github
+.venv
+data
+tests
+training
+monitoring
+reports
+**/__pycache__
+*.md
